@@ -1,31 +1,43 @@
 """
 kNN-based empirical CDF estimation utilities.
 
-This module implements several variants of k-nearest neighbours (kNN) models
-that can predict either the conditional mean or the entire empirical CDF (eCDF)
-of a target variable given a feature vector. It includes:
+This module implements several k-nearest neighbours (kNN) utilities oriented
+to conditional mean and distribution estimation with simple uncertainty
+quantification. It is intentionally lightweight and relies on FAISS for
+fast nearest-neighbour search.
 
-- A variance-aware kNN (KnnVar) that maintains separate models for mean and variance.
-- Bagging over multiple FAISS indices for scalability (KnnBag).
-- Utilities for model selection: best-k search, feature selection, and ROC evaluation.
+Key features
+- KnnBag: a FAISS-backed, column/row selective kNN "bag" that supports
+  mean predictions and empirical CDF estimation from neighbour targets.
+- KnnVar: a small wrapper that keeps separate KnnBag models for the
+  conditional mean and the conditional variance (or residuals).
+- Utilities for model initialization, feature selection and automatic
+  selection of the optimal k (select_best_k / select_best_k_v).
+- A ROC-like metric that compares two empirical residual distributions.
 
-The implementations rely on FAISS for fast nearest-neighbour search.
+Practical notes
+- FAISS indexes require float32 contiguous arrays: KnnBag converts data to
+  float32 and contiguous memory before building/searching the index.
+- The select_features routine uses paired t-tests with Bonferroni
+  correction; it is designed for interpretability rather than maximal
+  predictive power.
+- Functions expect numpy arrays as inputs; light input validation is
+  performed and informative exceptions are raised on mismatch.
 
-Classes
--------
-KnnVar
-    Variance-aware kNN with separate models for mean and variance prediction
-KnnBag
-    kNN implementation using FAISS with feature selection
+Typical usage (high level)
+1. Split data into train/validation folds.
+2. Use initialize_knn or no_initialize_knn to obtain trained KnnBag models
+   for mean and variance, selected feature indices and chosen k values.
+3. Wrap the two KnnBag models with KnnVar to conveniently predict mean,
+   variance and associated eCDFs.
+4. Use roc(...) to compute the distribution comparison metric.
 
-Functions
----------
-select_best_k : Find optimal k value based on MSE
-select_best_k_v : Find optimal k value for variance estimation
-select_features : Feature selection using kNN approach
-initialize_knn : Initialize kNN models with feature selection
-no_initialize_knn : Initialize kNN models without feature selection
-roc : Compute ROC-like metric for distribution comparison
+Exported names of interest
+- KnnBag, KnnVar
+- initialize_knn, no_initialize_knn
+- select_features, select_best_k, select_best_k_v
+- roc
+
 """
 
 import faiss
@@ -65,30 +77,33 @@ DEFAULT_QUANTILE_THRESHOLD = 0.99
 
 class KnnVar:
     """
-    kNN model with separate prediction for mean and variance.
+    kNN ensemble for conditional mean and conditional variance.
 
-    This class maintains two independent kNN models: one for predicting
-    mean values and another for predicting variances. This allows for
-    uncertainty quantification in predictions.
+    Purpose
+    -------
+    Provide a compact interface to predict both a conditional mean and a
+    conditional variance (or squared residuals) by keeping two independent
+    KnnBag models:
+      - _knna: used to predict the conditional mean (or directly the target)
+      - _knnv: used to predict variance / squared residuals
 
-    Parameters
-    ----------
-    knna : KnnBag
-        kNN model for predicting mean values.
-    knnv : KnnBag
-        kNN model for predicting variances.
+    Design notes
+    ------------
+    - Keeping separate bags for mean and variance avoids biasing variance
+      estimation with the same configuration required for the mean.
+    - Predictions are computed as simple averages over k nearest neighbours;
+      for variance the model is trained on squared residuals.
 
-    Attributes
-    ----------
-    _knna : KnnBag
-        Internal kNN model for mean prediction.
-    _knnv : KnnBag
-        Internal kNN model for variance prediction.
+    Methods (high level)
+    --------------------
+    - predict_average(x, k): returns mean predictions for rows in x.
+    - predict_variance(x, k): returns variance estimates (expect non-negative).
+    - predict_*_ecdf(...): return empirical CDF evaluated at provided z points.
 
     Examples
     --------
     >>> knna = KnnBag(X_train, y_train, rows, cols_mean)
-    >>> residuals = np.square(y_train - knna.predict(X_train, k=10))
+    >>> residuals = (y_train - knna.predict(X_train, k=10))**2
     >>> knnv = KnnBag(X_train, residuals, rows, cols_var)
     >>> model = KnnVar(knna, knnv)
     >>> mean_pred = model.predict_average(X_test, k=10)
@@ -358,11 +373,19 @@ class KnnBag:
                 f"selected_cols must be a numpy array, got {type(selected_cols).__name__}"
             )
 
-        self._x = x[np.ix_(selected_rows, selected_cols)]
-        self._y = y[np.ix_(selected_rows)]
+        # Ensure integer index arrays
+        selected_rows = np.asarray(selected_rows, dtype=np.intp)
+        selected_cols = np.asarray(selected_cols, dtype=np.intp)
+
+        # Select data and enforce types/contiguity for FAISS (float32)
+        self._x = np.ascontiguousarray(
+            x[np.ix_(selected_rows, selected_cols)].astype(np.float32)
+        )
+        self._y = np.ascontiguousarray(y[selected_rows])
         self._selected_rows = selected_rows
         self._selected_cols = selected_cols
-        self._index = faiss.IndexFlatL2(self._x.shape[1])
+        # Build FAISS index (expects float32 contiguous)
+        self._index = faiss.IndexFlatL2(int(self._x.shape[1]))
         self._index.add(self._x)
 
     def predict(
@@ -398,7 +421,8 @@ class KnnBag:
         if not isinstance(x, np.ndarray):
             raise TypeError(f"x must be a numpy array, got {type(x).__name__}")
 
-        xt = x[np.ix_(range(x.shape[0]), self._selected_cols)]
+        # Prepare query matrix (must be float32 contiguous)
+        xt = np.ascontiguousarray(x[:, self._selected_cols].astype(np.float32))
         distances, indices = self._index.search(xt, k=int(k))
         yp = np.mean(np.array(self._y[indices]), axis=1)
         return yp
@@ -448,13 +472,17 @@ class KnnBag:
         if not isinstance(z, np.ndarray):
             raise TypeError(f"z must be a numpy array, got {type(z).__name__}")
 
-        xt = x[np.ix_(range(x.shape[0]), self._selected_cols)]
+        xt = np.ascontiguousarray(x[:, self._selected_cols].astype(np.float32))
         distances, indices = self._index.search(xt, k=int(k))
-        result = []
-        for row in self._y[indices]:
-            ecdf = ECDF(row)
-            result.append(ecdf(z))
-        return np.array(result)
+
+        # y_neighbors: (n_samples, k)
+        y_neighbors = self._y[indices]
+        z = np.asarray(z)
+        # vectorized empirical CDF: fraction of neighbors <= z for each sample
+        # result shape -> (n_samples, len(z))
+        counts = np.sum(y_neighbors[:, :, None] <= z[None, None, :], axis=1)
+        result = counts.astype(float) / float(y_neighbors.shape[1])
+        return result
 
     def obtain_neighbors(
         self, x: npt.NDArray[np.float64], k: int = DEFAULT_K
@@ -485,7 +513,7 @@ class KnnBag:
         if k <= 0:
             raise ValueError(f"k must be greater than 0, got {k}")
 
-        xt = x[np.ix_(range(x.shape[0]), self._selected_cols)]
+        xt = np.ascontiguousarray(x[:, self._selected_cols].astype(np.float32))
         distances, indices = self._index.search(xt, k=int(k))
         return indices
 
@@ -813,22 +841,29 @@ def select_best_k(
     only once (for max(grid)) and then evaluates different k values by
     using subsets of those neighbors.
     """
-    kmax = max(grid)
-    # Get kmax+1 neighbors and exclude the point itself (first neighbor)
-    neighbors = bag.obtain_neighbors(x, kmax + 1)[:, 1:]
+    grid = np.asarray(grid, dtype=np.intp)
+    if grid.min() < 1:
+        raise ValueError("grid values must be >= 1 for select_best_k")
 
-    error = np.zeros((y.shape[0], len(grid)))
+    kmax = int(grid.max())
+    # neighbors_full includes the point itself as first column -> drop it
+    neighbors = bag.obtain_neighbors(x, kmax + 1)[:, 1:]  # shape (n_samples, kmax)
 
-    for i in range(y.shape[0]):
-        for k_idx in range(len(grid)):
-            k_value = grid[k_idx]
-            prediction = np.mean(y[neighbors[i, 0:k_value]])
-            error[i, k_idx] = float(y[i] - prediction) ** 2
+    # y_neighbors shape (n_samples, kmax)
+    y_neighbors = y[neighbors]
+    # cumulative mean of first m neighbors (1..kmax)
+    cumsum = np.cumsum(y_neighbors, axis=1)
+    counts = np.arange(1, kmax + 1)
+    cummean = cumsum / counts[np.newaxis, :]
 
-    error = np.mean(error, axis=0)
-    min_error_index = np.argmin(error)
+    # For each candidate k, pick cummean[:, k-1] and compute MSE
+    errors = []
+    for k_value in grid:
+        pred = cummean[:, int(k_value) - 1]
+        errors.append(np.mean((y - pred) ** 2))
 
-    return grid[min_error_index]
+    errors = np.asarray(errors)
+    return int(grid[np.argmin(errors)])
 
 
 def select_best_k_v(
@@ -864,23 +899,30 @@ def select_best_k_v(
     Unlike select_best_k, this function includes the point itself in
     neighbor consideration (starts from index 1 instead of 0).
     """
-    kmax = max(grid)
-    # Get all kmax+1 neighbors
-    neighbors = bag.obtain_neighbors(x, kmax + 1)[:, 0:]
+    grid = np.asarray(grid, dtype=np.intp)
+    if grid.min() < 1:
+        raise ValueError(
+            "grid values must be >= 1 for select_best_k_v (at least 1 neighbor excluding self)"
+        )
 
-    error = np.zeros((y.shape[0], len(grid)))
+    kmax = int(grid.max())
+    # Request kmax+1 neighbors so we can exclude the self-hit at col 0
+    neighbors_full = bag.obtain_neighbors(x, kmax + 1)  # shape (n_samples, kmax+1)
+    # Exclude self (first column) -> shape (n_samples, kmax)
+    neighbors_excl_self = neighbors_full[:, 1 : (kmax + 1)]
 
-    for i in range(y.shape[0]):
-        for k_idx in range(len(grid)):
-            k_value = grid[k_idx]
-            # Start from index 1 to exclude the exact same point
-            prediction = np.mean(y[neighbors[i, 1:k_value]])
-            error[i, k_idx] = float(y[i] - prediction) ** 2
+    y_neighbors = y[neighbors_excl_self]  # shape (n_samples, kmax)
+    cumsum = np.cumsum(y_neighbors, axis=1)
+    counts = np.arange(1, kmax + 1)
+    cummean = cumsum / counts[np.newaxis, :]
 
-    error = np.mean(error, axis=0)
-    min_error_index = np.argmin(error)
+    errors = []
+    for k_value in grid:
+        pred = cummean[:, int(k_value) - 1]  # use k_value neighbors (excluding self)
+        errors.append(np.mean((y - pred) ** 2))
 
-    return grid[min_error_index]
+    errors = np.asarray(errors)
+    return int(grid[np.argmin(errors)])
 
 
 def select_features(
@@ -890,43 +932,46 @@ def select_features(
     quantile: float = DEFAULT_QUANTILE_THRESHOLD,
 ) -> Tuple[npt.NDArray[np.int32], npt.NDArray[np.float64]]:
     """
-    Select relevant features using kNN-based statistical testing.
+    Select relevant features using a kNN-backed paired t-test procedure.
 
-    This function determines which features contribute significantly to
-    prediction accuracy by comparing prediction errors with and without
-    each feature using paired t-tests.
-
-    Parameters
-    ----------
-    x : np.ndarray of shape (n_samples, n_features)
-        Input feature matrix.
-    y : np.ndarray of shape (n_samples,)
-        Target values.
-    grida : np.ndarray
-        Grid of k values to test.
-    quantile : float, default=0.99
-        Significance threshold (higher = more conservative selection).
+    Behavior summary
+    ----------------
+    - Splits the provided (x, y) into training/validation subsets.
+    - Trains a reference KnnBag on the training subset using all features.
+    - For each feature j, trains a KnnBag with feature j removed.
+    - On the validation subset computes absolute prediction errors with and
+      without each feature and runs a paired t-test (one-sided: errors with
+      all features < errors with feature removed).
+    - Applies a Bonferroni correction for multiple comparisons.
+    - Returns indices of features that pass the corrected significance level
+      together with the raw p-values for inspection.
 
     Returns
     -------
-    tuple
-        - selected : np.ndarray
-            Indices of selected features. If no features pass the test,
-            all features are returned.
-        - pvalues : np.ndarray
-            P-values from the paired t-test for each feature.
+    selected : np.ndarray (shape=(m_selected,))
+        Indices of selected features. If no feature passes the threshold the
+        function returns all features and logs a warning.
+    pvalues : np.ndarray (shape=(n_features,))
+        Raw p-values from the paired t-tests (before any ordering).
 
-    Raises
-    ------
-    TypeError
-        If x, y, or grida are not numpy arrays.
-    ValueError
-        If quantile is not in (0, 1].
+    Important details
+    -----------------
+    - The test is one-sided (alternative='less' in ttest_rel): a small
+      p-value indicates that removing the feature increases error.
+    - The method is intended as a fast, interpretable filter; consider more
+      advanced selection (cross-validated wrappers) for production use.
+    - Computational complexity: O(n_features * cost_of_training_a_KnnBag).
+      On large feature sets or large n_samples consider parallelizing bag
+      construction or using no_initialize_knn as a baseline.
 
-    Notes
-    -----
-    The function uses Bonferroni correction to control for multiple comparisons.
-    A warning is logged if no features pass the significance test.
+    Errors and validation
+    ---------------------
+    - Raises TypeError if inputs are not numpy arrays.
+    - Raises ValueError if quantile is not in (0, 1].
+
+    Example
+    -------
+    >>> selected, pvals = select_features(X_train, y_train, grida=np.array([5,10,20]))
     """
     if not isinstance(x, np.ndarray):
         raise TypeError(f"x must be a numpy array, got {type(x).__name__}")
@@ -951,19 +996,24 @@ def select_features(
     bag = KnnBag(x1, y1, all_rows, all_cols)
     k = select_best_k(bag, x1, y1, grida)
 
-    # Create models with each feature removed
-    bags = []
-    for j in range(x.shape[1]):
-        selected_cols = np.array([i for i in range(x1.shape[1]) if i != j])
-        bags.append(KnnBag(x1, y1, all_rows, selected_cols))
+    # Compute base prediction once and reuse for w1
+    n_features = x.shape[1]
+    base_pred = bag.predict(x2, k)
+    w1 = np.abs(y2 - base_pred)[:, None].repeat(n_features, axis=1)
 
-    # Compute prediction errors
-    w1 = np.zeros((x2.shape[0], len(bags)))  # errors with all features
-    w2 = np.zeros((x2.shape[0], len(bags)))  # errors without each feature
+    # Function to build bag without feature j and compute abs error on x2
+    def pred_without_feature(j):
+        selected_cols = np.array(
+            [i for i in range(x1.shape[1]) if i != j], dtype=np.intp
+        )
+        b = KnnBag(x1, y1, all_rows, selected_cols)
+        return np.abs(y2 - b.predict(x2, k))
 
-    for j, b in enumerate(bags):
-        w1[:, j] = np.abs(y2 - bag.predict(x2, k))
-        w2[:, j] = np.abs(y2 - b.predict(x2, k))
+    # Parallel compute columns of w2
+    w2_cols = Parallel(n_jobs=-1)(
+        delayed(pred_without_feature)(j) for j in range(n_features)
+    )
+    w2 = np.column_stack(w2_cols)
 
     logger.debug(
         "Feature selection - Mean error with all features: %s", np.mean(w1, axis=0)
@@ -993,5 +1043,3 @@ def select_features(
         selected = np.arange(x.shape[1])
 
     return (selected, res.pvalue)
-
-
