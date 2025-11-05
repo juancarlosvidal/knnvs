@@ -378,6 +378,8 @@ class KnnBag:
         selected_cols = np.asarray(selected_cols, dtype=np.intp)
 
         # Select data and enforce types/contiguity for FAISS (float32)
+        if selected_cols.size == 0:
+            raise ValueError("selected_cols must contain at least one feature.")
         self._x = np.ascontiguousarray(
             x[np.ix_(selected_rows, selected_cols)].astype(np.float32)
         )
@@ -857,12 +859,11 @@ def select_best_k(
     cummean = cumsum / counts[np.newaxis, :]
 
     # For each candidate k, pick cummean[:, k-1] and compute MSE
-    errors = []
-    for k_value in grid:
-        pred = cummean[:, int(k_value) - 1]
-        errors.append(np.mean((y - pred) ** 2))
-
-    errors = np.asarray(errors)
+    # vectorized evaluation for all candidate k
+    grid = np.asarray(grid, dtype=np.intp)
+    grid_idx = grid - 1  # zero-based indices into cummean
+    pred_matrix = cummean[:, grid_idx]  # shape (n_samples, len(grid))
+    errors = np.mean((y[:, None] - pred_matrix) ** 2, axis=0)
     return int(grid[np.argmin(errors)])
 
 
@@ -916,12 +917,10 @@ def select_best_k_v(
     counts = np.arange(1, kmax + 1)
     cummean = cumsum / counts[np.newaxis, :]
 
-    errors = []
-    for k_value in grid:
-        pred = cummean[:, int(k_value) - 1]  # use k_value neighbors (excluding self)
-        errors.append(np.mean((y - pred) ** 2))
-
-    errors = np.asarray(errors)
+    grid = np.asarray(grid, dtype=np.intp)
+    grid_idx = grid - 1
+    pred_matrix = cummean[:, grid_idx]
+    errors = np.mean((y[:, None] - pred_matrix) ** 2, axis=0)
     return int(grid[np.argmin(errors)])
 
 
@@ -1001,17 +1000,20 @@ def select_features(
     base_pred = bag.predict(x2, k)
     w1 = np.abs(y2 - base_pred)[:, None].repeat(n_features, axis=1)
 
-    # Function to build bag without feature j and compute abs error on x2
-    def pred_without_feature(j):
-        selected_cols = np.array(
-            [i for i in range(x1.shape[1]) if i != j], dtype=np.intp
-        )
+    # Precompute selected_cols for each leave-one-out feature to avoid repeated list comprehsion
+    feature_indices = np.arange(n_features, dtype=np.intp)
+    selected_cols_list = [
+        np.delete(feature_indices, j).astype(np.intp) for j in range(n_features)
+    ]
+
+    def pred_without_feature_from_cols(selected_cols):
         b = KnnBag(x1, y1, all_rows, selected_cols)
         return np.abs(y2 - b.predict(x2, k))
 
-    # Parallel compute columns of w2
-    w2_cols = Parallel(n_jobs=-1)(
-        delayed(pred_without_feature)(j) for j in range(n_features)
+    # Use threads to avoid pickling FAISS-heavy objects (and reduce overhead)
+    n_jobs = min(n_features, max(1, mp.cpu_count()))
+    w2_cols = Parallel(n_jobs=n_jobs, prefer="threads")(
+        delayed(pred_without_feature_from_cols)(cols) for cols in selected_cols_list
     )
     w2 = np.column_stack(w2_cols)
 
