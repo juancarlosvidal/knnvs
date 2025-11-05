@@ -1,0 +1,6 @@
+The simulations in the low, moderate and large regimes primary performed on a cluster of Intel Xeon Gold 6248 (20 cores) using `sbatch`` as follows:
+
+nohup ./run.sh sim_1.py
+
+The scripts used to generate the data and evaluate our kNN model are in the `scripts`` foder together with the invoked python files. 
+The results were moved to the `data` folder within each regime.
