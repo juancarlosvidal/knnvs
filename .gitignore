@@ -1,0 +1,58 @@
+# Compilación de Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env/
+
+# Archivos de configuración locales
+*.env
+*.ini
+*.cfg
+*.toml
+
+# Cache de herramientas
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+*.cover
+htmlcov/
+
+# Distribución / empaquetado
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+
+# Jupyter Notebooks
+*.nbconvert.ipynb
+
+# Archivos temporales del sistema
+.DS_Store
+Thumbs.db
+
+# Datos generados
+*.sqlite3
+*.sqlite
+*.db
+*.tar.gz
+*.zip
+*.png
+
+# Carpetas de datos locales
+data/
+# datasets/
+# output/
+# results/
+
+# VS Code
+.vscode/
