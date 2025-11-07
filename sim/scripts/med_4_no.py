@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knn_bagging import KnnBagging, KnnBag, KnnVar, no_initialize_knn
+from knnvs import KnnBagging, KnnBag, KnnVar, no_initialize_knn
 import random
 import logging
 import csv
@@ -101,17 +101,17 @@ if __name__ == "__main__":
                     # Theoretical mean
                     ma = np.apply_along_axis(f0, 1, x)
                     # Predicted mean
-                    pa = knn.predicta(x, k=ka)
+                    pa = knn.predict_average(x, k=ka)
                     msea = skl.mean_squared_error(ma, pa)
                     # kv = 200
                     # Theoretical variance
                     sigma = np.apply_along_axis(g0, 1, x)
                     # Predicted variance
-                    pv = knn.predictv(x, k=kv)
+                    pv = knn.predict_variance(x, k=kv)
                     msev = skl.mean_squared_error(sigma, pv)
 
                     # for k in gridv:
-                    #     pv = knn.predictv(x, k=k)
+                    #     pv = knn.predict_variance(x, k=k)
                     #     msev3 = skl.mean_squared_error(sigma, pv)
                     #     print('{} {}'.format(k, msev3))
                     #     plt.scatter(sigma, pv)
