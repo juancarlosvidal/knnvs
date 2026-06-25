@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBagging, KnnBag, KnnVar, initialize_knn
+from knnvs import KnnBag, KnnVar, initialize_knn
 import random
 import logging
 import csv

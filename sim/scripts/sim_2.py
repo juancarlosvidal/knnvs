@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBagging, KnnBag, KnnVar, initialize_knn
+from knnvs import KnnBag, KnnVar, initialize_knn
 import random
 import logging
 import csv
@@ -36,8 +36,8 @@ def simulate(n, d):
 
 if __name__ == '__main__':
 
-    # random.seed(1)
-    # np.random.seed(1)
+    random.seed(1)
+    np.random.seed(1)
 
     n_sims = 300
     # n_list = [(5000, 1)]

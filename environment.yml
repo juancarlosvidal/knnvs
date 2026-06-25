@@ -1,0 +1,22 @@
+name: knn
+channels:
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - faiss
+  - matplotlib
+  - mpld3
+  - python=3.8
+  - r-base
+  - r-essentials
+  - rpy2
+  - scienceplots
+  - scikit-learn
+  - seaborn
+  - statsmodels
+  - scipy
+  - pingouin
+  - tqdm
+  - black
+  - nb_black
+prefix: /opt/anaconda3/envs/knn

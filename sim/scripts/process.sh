@@ -1,8 +1,9 @@
 #!/bin/bash
-#SBATCH --gres=gpu:1
-#SBATCH -c 16
-#SBATCH --mem=128gb
-PYTHON=/mnt/beegfs/home/juan.vidal/miniconda3/envs/knncpu/bin/python3.8
+##SBATCH --gres=gpu:1
+#SBATCH -c 8
+#SBATCH --mem=32gb
+#SBATCH --job-name=knnvs 
+PYTHON=$(which python3)
 command="$PYTHON $1"
 echo $command
 $command

@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBagging, KnnBag, KnnVar, initialize_knn
+from knnvs import KnnBag, KnnVar, initialize_knn
 import random
 import logging
 import csv
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     random.seed(1)
     np.random.seed(1)
 
-    n_sims = 50
+    n_sims = 300
     n_list = [(5000, 1), (10000, 1), (20000, 1), (50000, 1), (100000, 1)]
 #    p_list = [3, 5, 10]
     p_list = [3, 10, 20, 25]
