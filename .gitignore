@@ -23,6 +23,7 @@ env/
 coverage.xml
 *.cover
 htmlcov/
+.claude/
 
 # Distribución / empaquetado
 build/
