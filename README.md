@@ -14,16 +14,16 @@ The main contribution is a two-stage pipeline:
 
 ## Core API
 
-| Name | Description |
-|------|-------------|
-| `KnnBag` | FAISS-backed kNN model supporting mean and empirical CDF prediction. |
-| `KnnVar` | Wrapper holding separate `KnnBag` models for mean and variance. |
-| `initialize_knn` | Train mean and variance models with automatic feature selection. |
-| `no_initialize_knn` | Same pipeline without feature selection (faster baseline). |
-| `select_features` | Leave-one-out paired t-test feature selection with Bonferroni correction. |
-| `select_best_k` | Data-driven k selection for the mean model (minimises MSE). |
-| `select_best_k_v` | Data-driven k selection for the variance model. |
-| `roc` | ROC-like integral metric comparing two empirical residual distributions. |
+| Name                  | Description                                                               |
+| --------------------- | ------------------------------------------------------------------------- |
+| `KnnBag`            | FAISS-backed kNN model supporting mean and empirical CDF prediction.      |
+| `KnnVar`            | Wrapper holding separate `KnnBag` models for mean and variance.         |
+| `initialize_knn`    | Train mean and variance models with automatic feature selection.          |
+| `no_initialize_knn` | Same pipeline without feature selection (faster baseline).                |
+| `select_features`   | Leave-one-out paired t-test feature selection with Bonferroni correction. |
+| `select_best_k`     | Data-driven k selection for the mean model (minimises MSE).               |
+| `select_best_k_v`   | Data-driven k selection for the variance model.                           |
+| `roc`               | ROC-like integral metric comparing two empirical residual distributions.  |
 
 ## Quickstart
 
@@ -96,11 +96,11 @@ python sim/scripts/make_table.py --fs lar1.csv --nofs lar1_no.csv
 
 ## Real Data Applications
 
-| Dataset | Task | Outcome |
-|---------|------|---------|
-| **NHANES** | Predict waist circumference; compare diabetic vs. non-diabetic groups via conditional ROC | AUC ≈ 0.71 |
-| **CAB** | Conditional mean and variance estimation | — |
-| **Sarcopenia** | Stratified analysis by gender | — |
+| Dataset              | Task                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| **NHANES**     | Predict waist circumference; compare diabetic vs. non-diabetic groups via conditional ROC |
+| **CAB**        | Conditional mean and variance estimation                                                  |
+| **Sarcopenia** | Stratified analysis by gender                                                             |
 
 ## Installation
 
