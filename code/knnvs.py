@@ -569,244 +569,287 @@ def roc(
     return i1
 
 
-def no_initialize_knn(
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
-    grida: npt.NDArray[np.int32],
-    gridv: npt.NDArray[np.int32],
-    quantile: float = DEFAULT_QUANTILE_THRESHOLD,
-) -> Tuple[
-    KnnBag, npt.NDArray[np.int32], int, None, KnnBag, npt.NDArray[np.int32], int, None
-]:
-    """
-    Initialize kNN models without feature selection.
+# def no_initialize_knn(
+#     x: npt.NDArray[np.float64],
+#     y: npt.NDArray[np.float64],
+#     grida: npt.NDArray[np.int32],
+#     gridv: npt.NDArray[np.int32],
+#     quantile: float = DEFAULT_QUANTILE_THRESHOLD,
+# ) -> Tuple[
+#     KnnBag, npt.NDArray[np.int32], int, None, KnnBag, npt.NDArray[np.int32], int, None
+# ]:
+#     """
+#     Initialize kNN models without feature selection.
 
-    Creates two kNN models (for mean and variance) using all available
-    features. This is faster than initialize_knn but may be less accurate
-    if irrelevant features are present.
+#     Creates two kNN models (for mean and variance) using all available
+#     features. This is faster than initialize_knn but may be less accurate
+#     if irrelevant features are present.
 
-    Parameters
-    ----------
-    x : np.ndarray of shape (n_samples, n_features)
-        Input feature matrix.
-    y : np.ndarray of shape (n_samples,)
-        Target values.
-    grida : np.ndarray
-        Grid of k values to test for the mean model.
-    gridv : np.ndarray
-        Grid of k values to test for the variance model.
-    quantile : float, default=0.99
-        Quantile threshold (not used in this function, kept for API consistency).
+#     Parameters
+#     ----------
+#     x : np.ndarray of shape (n_samples, n_features)
+#         Input feature matrix.
+#     y : np.ndarray of shape (n_samples,)
+#         Target values.
+#     grida : np.ndarray
+#         Grid of k values to test for the mean model.
+#     gridv : np.ndarray
+#         Grid of k values to test for the variance model.
+#     quantile : float, default=0.99
+#         Quantile threshold (not used in this function, kept for API consistency).
 
-    Returns
-    -------
-    tuple
-        - knna : KnnBag
-            Trained kNN model for mean prediction
-        - features_avg : np.ndarray
-            Feature indices used (all features)
-        - k_avg : int
-            Optimal k for mean model
-        - pvalues_avg : None
-            No p-values (no feature selection performed)
-        - knnv : KnnBag
-            Trained kNN model for variance prediction
-        - features_var : np.ndarray
-            Feature indices used (all features)
-        - k_var : int
-            Optimal k for variance model
-        - pvalues_var : None
-            No p-values (no feature selection performed)
+#     Returns
+#     -------
+#     tuple
+#         - knna : KnnBag
+#             Trained kNN model for mean prediction
+#         - features_avg : np.ndarray
+#             Feature indices used (all features)
+#         - k_avg : int
+#             Optimal k for mean model
+#         - pvalues_avg : None
+#             No p-values (no feature selection performed)
+#         - knnv : KnnBag
+#             Trained kNN model for variance prediction
+#         - features_var : np.ndarray
+#             Feature indices used (all features)
+#         - k_var : int
+#             Optimal k for variance model
+#         - pvalues_var : None
+#             No p-values (no feature selection performed)
 
-    Notes
-    -----
-    The data is split multiple times to create training/validation sets
-    for model selection and evaluation.
-    """
-    # First split: separate into two halves
-    x1, x2, y1, y2 = train_test_split(
-        x, y, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     Notes
+#     -----
+#     The data is split multiple times to create training/validation sets
+#     for model selection and evaluation.
+#     """
+#     # First split: separate into two halves
+#     x1, x2, y1, y2 = train_test_split(
+#         x, y, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Split first half for mean model training
-    x11, x12, y11, y12 = train_test_split(
-        x1, y1, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     # Split first half for mean model training
+#     x11, x12, y11, y12 = train_test_split(
+#         x1, y1, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Split second half for variance model training
-    x21, x22, y21, y22 = train_test_split(
-        x2, y2, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     # Split second half for variance model training
+#     x21, x22, y21, y22 = train_test_split(
+#         x2, y2, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Split for final variance model evaluation
-    x31, x32, y31, y32 = train_test_split(
-        x22, y22, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     # Split for final variance model evaluation
+#     x31, x32, y31, y32 = train_test_split(
+#         x22, y22, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Use all features (no feature selection)
-    features_avg = np.arange(x11.shape[1])
-    pvalues_avg = None
+#     # Use all features (no feature selection)
+#     features_avg = np.arange(x11.shape[1])
+#     pvalues_avg = None
 
-    # Train mean model and select optimal k
-    knna = KnnBag(
-        x12, y12, selected_rows=np.arange(x12.shape[0]), selected_cols=features_avg
-    )
-    k_avg = select_best_k(knna, x12, y12, grid=grida)
+#     # Train mean model and select optimal k
+#     knna = KnnBag(
+#         x12, y12, selected_rows=np.arange(x12.shape[0]), selected_cols=features_avg
+#     )
+#     k_avg = select_best_k(knna, x12, y12, grid=grida)
 
-    # Compute residuals for variance model
-    residuals_21 = np.square(y21 - knna.predict(x21, k_avg))
+#     # Compute residuals for variance model
+#     residuals_21 = np.square(y21 - knna.predict(x21, k_avg))
 
-    features_var = np.arange(x21.shape[1])
-    pvalues_var = None
+#     features_var = np.arange(x21.shape[1])
+#     pvalues_var = None
 
-    residuals_31 = np.square(y31 - knna.predict(x31, k_avg))
+#     residuals_31 = np.square(y31 - knna.predict(x31, k_avg))
 
-    # Train variance model
-    knnv = KnnBag(
-        x31,
-        residuals_31,
-        selected_rows=np.arange(x31.shape[0]),
-        selected_cols=features_var,
-    )
+#     # Train variance model
+#     knnv = KnnBag(
+#         x31,
+#         residuals_31,
+#         selected_rows=np.arange(x31.shape[0]),
+#         selected_cols=features_var,
+#     )
 
-    residuals_32 = np.square(y32 - knna.predict(x32, k_avg))
-    k_var = select_best_k_v(knnv, x32, residuals_32, grid=gridv)
+#     residuals_32 = np.square(y32 - knna.predict(x32, k_avg))
+#     k_var = select_best_k_v(knnv, x32, residuals_32, grid=gridv)
 
-    return (
-        knna,
-        features_avg,
-        k_avg,
-        pvalues_avg,
-        knnv,
-        features_var,
-        k_var,
-        pvalues_var,
-    )
+#     return (
+#         knna,
+#         features_avg,
+#         k_avg,
+#         pvalues_avg,
+#         knnv,
+#         features_var,
+#         k_var,
+#         pvalues_var,
+#     )
+def no_initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
+    # Same folds as initialize_knn; only the selection step is skipped
+    rng = np.random.RandomState(RANDOM_STATE_DEFAULT)
+    i1, i2, i3, i4 = np.array_split(rng.permutation(x.shape[0]), 4)
+    x2, y2 = x[i2], y[i2]
+    x4, y4 = x[i4], y[i4]
+
+    features_avg = np.arange(x.shape[1]); pvalues_avg = None
+    knna = KnnBag(x2, y2, selected_rows=np.arange(x2.shape[0]), selected_cols=features_avg)
+    k_avg = select_best_k(knna, x2, y2, grid=grida)
+
+    features_var = np.arange(x.shape[1]); pvalues_var = None
+    resid4 = np.square(y4 - knna.predict(x4, k_avg))
+    knnv = KnnBag(x4, resid4, selected_rows=np.arange(x4.shape[0]), selected_cols=features_var)
+    k_var = select_best_k_v(knnv, x4, resid4, grid=gridv)
+
+    return (knna, features_avg, k_avg, pvalues_avg,
+            knnv, features_var, k_var, pvalues_var)
 
 
-def initialize_knn(
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
-    grida: npt.NDArray[np.int32],
-    gridv: npt.NDArray[np.int32],
-    quantile: float = DEFAULT_QUANTILE_THRESHOLD,
-) -> Tuple[
-    KnnBag,
-    npt.NDArray[np.int32],
-    int,
-    npt.NDArray[np.float64],
-    KnnBag,
-    npt.NDArray[np.int32],
-    int,
-    npt.NDArray[np.float64],
-]:
-    """
-    Initialize kNN models with automatic feature selection.
 
-    Creates two kNN models (for mean and variance) with automatic feature
-    selection based on statistical significance tests. More computationally
-    expensive than no_initialize_knn but typically more accurate.
+# def initialize_knn(
+#     x: npt.NDArray[np.float64],
+#     y: npt.NDArray[np.float64],
+#     grida: npt.NDArray[np.int32],
+#     gridv: npt.NDArray[np.int32],
+#     quantile: float = DEFAULT_QUANTILE_THRESHOLD,
+# ) -> Tuple[
+#     KnnBag,
+#     npt.NDArray[np.int32],
+#     int,
+#     npt.NDArray[np.float64],
+#     KnnBag,
+#     npt.NDArray[np.int32],
+#     int,
+#     npt.NDArray[np.float64],
+# ]:
+#     """
+#     Initialize kNN models with automatic feature selection.
 
-    Parameters
-    ----------
-    x : np.ndarray of shape (n_samples, n_features)
-        Input feature matrix.
-    y : np.ndarray of shape (n_samples,)
-        Target values.
-    grida : np.ndarray
-        Grid of k values to test for the mean model.
-    gridv : np.ndarray
-        Grid of k values to test for the variance model.
-    quantile : float, default=0.99
-        Quantile threshold for feature selection (higher = more strict).
+#     Creates two kNN models (for mean and variance) with automatic feature
+#     selection based on statistical significance tests. More computationally
+#     expensive than no_initialize_knn but typically more accurate.
 
-    Returns
-    -------
-    tuple
-        - knna : KnnBag
-            Trained kNN model for mean prediction
-        - features_avg : np.ndarray
-            Selected feature indices for mean model
-        - k_avg : int
-            Optimal k for mean model
-        - pvalues_avg : np.ndarray
-            P-values from feature selection for mean model
-        - knnv : KnnBag
-            Trained kNN model for variance prediction
-        - features_var : np.ndarray
-            Selected feature indices for variance model
-        - k_var : int
-            Optimal k for variance model
-        - pvalues_var : np.ndarray
-            P-values from feature selection for variance model
+#     Parameters
+#     ----------
+#     x : np.ndarray of shape (n_samples, n_features)
+#         Input feature matrix.
+#     y : np.ndarray of shape (n_samples,)
+#         Target values.
+#     grida : np.ndarray
+#         Grid of k values to test for the mean model.
+#     gridv : np.ndarray
+#         Grid of k values to test for the variance model.
+#     quantile : float, default=0.99
+#         Quantile threshold for feature selection (higher = more strict).
 
-    Notes
-    -----
-    The function uses multiple train-test splits to avoid overfitting
-    during feature selection and model tuning.
-    """
-    # First split: separate into two halves
-    x1, x2, y1, y2 = train_test_split(
-        x, y, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     Returns
+#     -------
+#     tuple
+#         - knna : KnnBag
+#             Trained kNN model for mean prediction
+#         - features_avg : np.ndarray
+#             Selected feature indices for mean model
+#         - k_avg : int
+#             Optimal k for mean model
+#         - pvalues_avg : np.ndarray
+#             P-values from feature selection for mean model
+#         - knnv : KnnBag
+#             Trained kNN model for variance prediction
+#         - features_var : np.ndarray
+#             Selected feature indices for variance model
+#         - k_var : int
+#             Optimal k for variance model
+#         - pvalues_var : np.ndarray
+#             P-values from feature selection for variance model
 
-    # Split first half for mean model training
-    x11, x12, y11, y12 = train_test_split(
-        x1, y1, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     Notes
+#     -----
+#     The function uses multiple train-test splits to avoid overfitting
+#     during feature selection and model tuning.
+#     """
+#     # First split: separate into two halves
+#     x1, x2, y1, y2 = train_test_split(
+#         x, y, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Split second half for variance model training
-    x21, x22, y21, y22 = train_test_split(
-        x2, y2, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     # Split first half for mean model training
+#     x11, x12, y11, y12 = train_test_split(
+#         x1, y1, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Split for final variance model evaluation
-    x31, x32, y31, y32 = train_test_split(
-        x22, y22, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-    )
+#     # Split second half for variance model training
+#     x21, x22, y21, y22 = train_test_split(
+#         x2, y2, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Perform feature selection for mean model
-    features_avg, pvalues_avg = select_features(
-        x11, y11, grida=grida, quantile=quantile
-    )
+#     # Split for final variance model evaluation
+#     x31, x32, y31, y32 = train_test_split(
+#         x22, y22, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
+#     )
 
-    # Train mean model with selected features
-    knna = KnnBag(
-        x12, y12, selected_rows=np.arange(x12.shape[0]), selected_cols=features_avg
-    )
-    k_avg = select_best_k(knna, x12, y12, grid=grida)
+#     # Perform feature selection for mean model
+#     features_avg, pvalues_avg = select_features(
+#         x11, y11, grida=grida, quantile=quantile
+#     )
 
-    # Compute residuals for variance model
-    residuals_21 = np.square(y21 - knna.predict(x21, k_avg))
+#     # Train mean model with selected features
+#     knna = KnnBag(
+#         x12, y12, selected_rows=np.arange(x12.shape[0]), selected_cols=features_avg
+#     )
+#     k_avg = select_best_k(knna, x12, y12, grid=grida)
 
-    # Perform feature selection for variance model
-    features_var, pvalues_var = select_features(
-        x21, residuals_21, grida=gridv, quantile=quantile
-    )
+#     # Compute residuals for variance model
+#     residuals_21 = np.square(y21 - knna.predict(x21, k_avg))
 
-    residuals_31 = np.square(y31 - knna.predict(x31, k_avg))
+#     # Perform feature selection for variance model
+#     features_var, pvalues_var = select_features(
+#         x21, residuals_21, grida=gridv, quantile=quantile
+#     )
 
-    # Train variance model with selected features
-    knnv = KnnBag(
-        x31,
-        residuals_31,
-        selected_rows=np.arange(x31.shape[0]),
-        selected_cols=features_var,
-    )
+#     residuals_31 = np.square(y31 - knna.predict(x31, k_avg))
 
-    residuals_32 = np.square(y32 - knna.predict(x32, k_avg))
-    k_var = select_best_k_v(knnv, x32, residuals_32, grid=gridv)
+#     # Train variance model with selected features
+#     knnv = KnnBag(
+#         x31,
+#         residuals_31,
+#         selected_rows=np.arange(x31.shape[0]),
+#         selected_cols=features_var,
+#     )
 
-    return (
-        knna,
-        features_avg,
-        k_avg,
-        pvalues_avg,
-        knnv,
-        features_var,
-        k_var,
-        pvalues_var,
-    )
+#     residuals_32 = np.square(y32 - knna.predict(x32, k_avg))
+#     k_var = select_best_k_v(knnv, x32, residuals_32, grid=gridv)
+
+#     return (
+#         knna,
+#         features_avg,
+#         k_avg,
+#         pvalues_avg,
+#         knnv,
+#         features_var,
+#         k_var,
+#         pvalues_var,
+#     )
+
+def initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
+    # Four balanced folds D1..D4 (~n/4 each), one per task (Fig. 2)
+    rng = np.random.RandomState(RANDOM_STATE_DEFAULT)
+    i1, i2, i3, i4 = np.array_split(rng.permutation(x.shape[0]), 4)
+    x1, y1 = x[i1], y[i1]   # D1: feature selection, mean
+    x2, y2 = x[i2], y[i2]   # D2: fit mean + select k_avg
+    x3, y3 = x[i3], y[i3]   # D3: feature selection, variance
+    x4, y4 = x[i4], y[i4]   # D4: fit variance + select k_var
+
+    # Conditional mean
+    features_avg, pvalues_avg = select_features(x1, y1, grida=grida, quantile=quantile)
+    knna = KnnBag(x2, y2, selected_rows=np.arange(x2.shape[0]), selected_cols=features_avg)
+    k_avg = select_best_k(knna, x2, y2, grid=grida)
+
+    # Conditional variance (residuals from the mean model)
+    resid3 = np.square(y3 - knna.predict(x3, k_avg))
+    features_var, pvalues_var = select_features(x3, resid3, grida=gridv, quantile=quantile)
+    resid4 = np.square(y4 - knna.predict(x4, k_avg))
+    knnv = KnnBag(x4, resid4, selected_rows=np.arange(x4.shape[0]), selected_cols=features_var)
+    k_var = select_best_k_v(knnv, x4, resid4, grid=gridv)
+
+    return (knna, features_avg, k_avg, pvalues_avg,
+            knnv, features_var, k_var, pvalues_var)
 
 
 def select_best_k(
@@ -998,7 +1041,8 @@ def select_features(
     # Compute base prediction once and reuse for w1
     n_features = x.shape[1]
     base_pred = bag.predict(x2, k)
-    w1 = np.abs(y2 - base_pred)[:, None].repeat(n_features, axis=1)
+    # w1 = np.abs(y2 - base_pred)[:, None].repeat(n_features, axis=1)
+    w1 = np.square(y2 - base_pred)[:, None].repeat(n_features, axis=1)
 
     # Precompute selected_cols for each leave-one-out feature to avoid repeated list comprehsion
     feature_indices = np.arange(n_features, dtype=np.intp)
@@ -1008,7 +1052,8 @@ def select_features(
 
     def pred_without_feature_from_cols(selected_cols):
         b = KnnBag(x1, y1, all_rows, selected_cols)
-        return np.abs(y2 - b.predict(x2, k))
+        # return np.abs(y2 - b.predict(x2, k))
+        return np.square(y2 - b.predict(x2, k))
 
     # Use threads to avoid pickling FAISS-heavy objects (and reduce overhead)
     n_jobs = min(n_features, max(1, mp.cpu_count()))

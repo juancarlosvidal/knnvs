@@ -82,10 +82,11 @@ Simulation studies cover three regimes (low, moderate, large) across varying sam
 
 The `sim/lasso/` study benchmarks knnvs feature selection against LASSO across 11 data-generating scenarios with heteroscedastic noise.
 
-Simulations were originally run on a cluster (Intel Xeon Gold 6248, 20 cores) using `sbatch`:
+Simulations are run on a cluster (Intel Xeon Gold 6248, 20 cores) as SLURM job arrays from the project root:
 
 ```bash
-nohup ./run.sh sim_1.py
+./sim.sh       # all regimes (22 jobs, up to 8 in parallel)
+./lasso.sh     # LASSO comparison (96 jobs = 12 scenarios × 8 α values)
 ```
 
 Results (CSV files) are stored in the `data/` subfolder of each regime. LaTeX tables can be generated with:

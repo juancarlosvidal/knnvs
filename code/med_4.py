@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBag, KnnVar, initialize_knn
+from code.knnvs import KnnBag, KnnVar, initialize_knn
 import random
 import logging
 import csv
@@ -94,7 +94,7 @@ if __name__ == "__main__":
                     msea, msev = 0, 0
                     msev2 = 0
 
-                    x, y = simulate(n, p)
+                    x = np.random.uniform(0, 1, (5000, p)).astype('float32')
                     # for ka in gridv:
                     #     for kv in gridv:
 

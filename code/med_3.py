@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBag, KnnVar, initialize_knn
+from code.knnvs import KnnBag, KnnVar, initialize_knn
 import random
 import logging
 import csv
@@ -16,11 +16,11 @@ logging.basicConfig(format='%(message)s', level=logging.INFO)
 
 
 # def f0(z): return 10
-def f0(z): return 5 * np.sum(z[0:3])
+def f0(z): return 5 * np.sum(z[0:2])
 
 
 # def g0(z): return 1.75 * (z[0] > 0.5) + 0.25 * (z[0] <= 0.5)
-def g0(z): return 1
+def g0(z): return 5 * z[3] + 5 * z[4]
 # def g0(z): return 5 * z[0]
 # def g0(z): return 1 * z[1] + 1 * z[2]
 
@@ -44,14 +44,14 @@ if __name__ == '__main__':
 #    p_list = [3, 5, 10]
     p_list = [5, 10, 20, 50]
 
-    str_sim = 'med1-fs-[0:4]-[]'
-    fa_gt = np.array([1, 2])   # Ground truth of important variables in mean
-    fv_gt = np.array([])  # Ground truth of important variables in variance
+    str_sim = 'med3-fs-[0:2]-[3:4]'
+    fa_gt = np.array([0, 1, 2])   # Ground truth of important variables in mean
+    fv_gt = np.array([3, 4])  # Ground truth of important variables in variance
 
     grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
     gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
 
-    with open('med1.csv', 'w', newline='') as file:
+    with open('med3.csv', 'w', newline='') as file:
         logging.info("DESC,N_SIMS,ACC_FS_A,PVA,ACC_FS_V,PVV,N,P,KA,KV,MSEA,MSEV")
         writer = csv.writer(file)
         writer.writerow(['DESC', 'N_SIMS', 'ACC_FS_A', 'PVA', 'ACC_FS_V', 'PVV', 'N', 'P', 'KA', 'KV', 'MSEA', 'MSEV'])
@@ -70,7 +70,7 @@ if __name__ == '__main__':
                     msea, msev = 0, 0
                     msev2 = 0
 
-                    x, y = simulate(n, p)
+                    x = np.random.uniform(0, 1, (5000, p)).astype('float32')
                     # for ka in gridv:
                     #     for kv in gridv:
 

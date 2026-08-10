@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBag, KnnVar, initialize_knn, no_initialize_knn
+from code.knnvs import KnnBag, KnnVar, initialize_knn, no_initialize_knn
 import random
 import logging
 import csv
@@ -15,8 +15,8 @@ logging.basicConfig(format='%(message)s', level=logging.INFO)
 # logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
-# def f0(z): return 10
-def f0(z): return 5 * z[1] + 5 * z[2]
+def f0(z): return 0
+# def f0(z): return 20 * z[1] + 20 * z[2]
 
 
 # def g0(z): return 1.75 * (z[0] > 0.5) + 0.25 * (z[0] <= 0.5)
@@ -44,14 +44,14 @@ if __name__ == '__main__':
 #    p_list = [3, 5, 10]
     p_list = [3, 10, 20, 25]
 
-    str_sim = 'sim3-no-fs-[1,2]-[0]'
-    fa_gt = np.array([1, 2])   # Ground truth of important variables in mean
+    str_sim = 'sim2-no-fs-[]-[0]'
+    fa_gt = np.array([])   # Ground truth of important variables in mean
     fv_gt = np.array([0])  # Ground truth of important variables in variance
 
     grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
     gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
 
-    with open('sim3_no.csv', 'w', newline='') as file:
+    with open('sim2_no.csv', 'w', newline='') as file:
         logging.info("DESC,N_SIMS,ACC_FS_A,PVA,ACC_FS_V,PVV,N,P,KA,KV,MSEA,MSEV")
         writer = csv.writer(file)
         writer.writerow(['DESC', 'N_SIMS', 'ACC_FS_A', 'PVA', 'ACC_FS_V', 'PVV', 'N', 'P', 'KA', 'KV', 'MSEA', 'MSEV'])
@@ -70,7 +70,7 @@ if __name__ == '__main__':
                     msea, msev = 0, 0
                     msev2 = 0
 
-                    x, y = simulate(n, p)
+                    x = np.random.uniform(0, 1, (5000, p)).astype('float32')
                     # for ka in gridv:
                     #     for kv in gridv:
 

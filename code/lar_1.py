@@ -2,7 +2,7 @@ import math
 import numpy as np
 import sklearn.metrics as skl
 
-from knnvs import KnnBag, KnnVar, no_initialize_knn
+from code.knnvs import KnnBag, KnnVar, initialize_knn
 import random
 import logging
 import csv
@@ -16,11 +16,11 @@ logging.basicConfig(format='%(message)s', level=logging.INFO)
 
 
 # def f0(z): return 10
-def f0(z): return 5 * np.sum(z[0:3])
+def f0(z): return 5 * np.sum(z[0:7])
 
 
 # def g0(z): return 1.75 * (z[0] > 0.5) + 0.25 * (z[0] <= 0.5)
-def g0(z): return 5 * np.sum(z[5:9])
+def g0(z): return 1
 # def g0(z): return 5 * z[0]
 # def g0(z): return 1 * z[1] + 1 * z[2]
 
@@ -44,14 +44,14 @@ if __name__ == '__main__':
 #    p_list = [3, 5, 10]
     p_list = [10, 25, 50, 100]
 
-    str_sim = 'lar4-no-fs-[0:3]-[5:9]'
-    fa_gt = np.array([0, 1, 2, 3])   # Ground truth of important variables in mean
-    fv_gt = np.array([5, 6, 7, 8, 9])  # Ground truth of important variables in variance
+    str_sim = 'lar1-fs-[0:7]-[]'
+    fa_gt = np.array([0, 1, 2, 3, 4, 5, 6, 7])   # Ground truth of important variables in mean
+    fv_gt = np.array([])  # Ground truth of important variables in variance
 
     grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
     gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
 
-    with open('lar4_no.csv', 'w', newline='') as file:
+    with open('lar1.csv', 'w', newline='') as file:
         logging.info("DESC,N_SIMS,ACC_FS_A,PVA,ACC_FS_V,PVV,N,P,KA,KV,MSEA,MSEV")
         writer = csv.writer(file)
         writer.writerow(['DESC', 'N_SIMS', 'ACC_FS_A', 'PVA', 'ACC_FS_V', 'PVV', 'N', 'P', 'KA', 'KV', 'MSEA', 'MSEV'])
@@ -59,7 +59,7 @@ if __name__ == '__main__':
             for p in p_list:
                 for i in range(n_sims):
                     x, y = simulate(n, p)
-                    knna, fa, ka, pva, knnv, fv, kv, pvv = no_initialize_knn(x, y, grida, gridv, quantile=(1-0.01))
+                    knna, fa, ka, pva, knnv, fv, kv, pvv = initialize_knn(x, y, grida, gridv, quantile=(1-0.01))
                     knn = KnnVar(knna, knnv)
 
                     set1, set2 = set(fa), set(fa_gt)
@@ -70,7 +70,7 @@ if __name__ == '__main__':
                     msea, msev = 0, 0
                     msev2 = 0
 
-                    x, y = simulate(n, p)
+                    x = np.random.uniform(0, 1, (5000, p)).astype('float32')
                     # for ka in gridv:
                     #     for kv in gridv:
 
