@@ -33,6 +33,7 @@ Date: 2025
 import math
 import argparse
 import os
+import sys
 
 import logging
 import csv
@@ -42,7 +43,8 @@ import numpy as np
 from sklearn import linear_model
 from sklearn.linear_model import LassoCV
 
-from code.knnvs import initialize_knn
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from knnvs import initialize_knn
 
 # import matplotlib.pyplot as plt
 

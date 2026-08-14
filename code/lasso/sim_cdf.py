@@ -1,6 +1,7 @@
 import math
 import argparse
 import os
+import sys
 
 import logging
 import csv
@@ -17,7 +18,8 @@ from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
 from rpy2.robjects.conversion import localconverter
 import rpy2.rinterface_lib.callbacks
 
-from code.knnvs import initialize_knn, no_initialize_knn
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from knnvs import initialize_knn, no_initialize_knn
 
 
 logging.basicConfig(format='%(message)s', level=logging.INFO)
