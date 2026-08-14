@@ -1,4 +1,4 @@
-name: knn
+name: knnvs
 channels:
   - conda-forge
   - defaults
