@@ -45,6 +45,7 @@ from sklearn.linear_model import LassoCV
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from knnvs import initialize_knn
+from sim_utils import resume_csv
 
 # import matplotlib.pyplot as plt
 
@@ -398,21 +399,33 @@ if __name__ == '__main__':
     # Get ground truth variable sets for this scenario
     ga, gv = sim_gt(_scenario)  # ga: mean vars, gv: variance vars
 
-    # Open CSV file to save results
+    # Open CSV file to save results (resumable: skips combos/sims already
+    # written by a previous run that got interrupted, e.g. a SLURM timeout)
     _out_path = os.path.join(_output_dir, 'lasso_scenario_{}_{}.csv'.format(_scenario, _alpha))
-    with open(_out_path, 'w', newline='') as file:
-        logging.info(['SCENARIO', 'N_SIMS', 'ALPHA', 'N', 'P', 'ACC_FA_KNN', 'FPR_FA_KNN', 'ACC_FA_LAS', 'FPR_FA_LAS',
-                      'ACC_FV_KNN', 'FPR_FV_KNN', 'ACC_FV_LAS', 'FPR_FV_LAS'])
-        writer = csv.writer(file)
-        writer.writerow(['SCENARIO', 'N_SIMS', 'ALPHA', 'N', 'P', 'ACC_FA_KNN', 'FPR_FA_KNN', 'ACC_FA_LAS', 'FPR_FA_LAS',
-                         'ACC_FV_KNN', 'FPR_FV_KNN', 'ACC_FV_LAS', 'FPR_FV_LAS'])
+    _header = ['SCENARIO', 'N_SIMS', 'ALPHA', 'N', 'P', 'ACC_FA_KNN', 'FPR_FA_KNN', 'ACC_FA_LAS', 'FPR_FA_LAS',
+               'ACC_FV_KNN', 'FPR_FV_KNN', 'ACC_FV_LAS', 'FPR_FV_LAS']
+    _mode, _combos_done, _i_done, _n_done = resume_csv(_out_path, _header, _n_sims)
 
+    with open(_out_path, _mode, newline='') as file:
+        writer = csv.writer(file)
+        if _n_done == 0:
+            logging.info(_header)
+            writer.writerow(_header)
+        else:
+            logging.info("Resuming {}: {} rows already done".format(_out_path, _n_done))
+
+        _combo_idx = 0
         # Loop over sample sizes
         for _n in _n_list:
             # Loop over dimensions
             for _p in _p_list:
+                if _combo_idx < _combos_done:
+                    _combo_idx += 1
+                    continue
+                _i_start = _i_done if _combo_idx == _combos_done else 0
+                _combo_idx += 1
                 # Monte Carlo repetitions
-                for _i in range(_n_sims):
+                for _i in range(_i_start, _n_sims):
                     # Generate synthetic dataset
                     _x, _y = sim_data(_n, _p, _scenario)
 

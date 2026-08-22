@@ -31,6 +31,11 @@ JOB[22]="code/lar_4_no.py lar4_no.csv  sim/large/data"
 read -r SCRIPT OUTFILE OUTDIR <<< "${JOB[$SLURM_ARRAY_TASK_ID]}"
 mkdir -p "$OUTDIR"
 
+if [ -f "$OUTDIR/$OUTFILE" ]; then
+    echo "task=$SLURM_ARRAY_TASK_ID script=$SCRIPT -> $OUTDIR/$OUTFILE already exists, skipping"
+    exit 0
+fi
+
 PYTHON=/mnt/beegfs/home/juan.vidal/miniforge3/envs/knnvs/bin/python3.8
 echo "task=$SLURM_ARRAY_TASK_ID script=$SCRIPT -> $OUTDIR/$OUTFILE"
 $PYTHON $SCRIPT && mv "$OUTFILE" "$OUTDIR/"

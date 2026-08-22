@@ -3,6 +3,7 @@ import numpy as np
 import sklearn.metrics as skl
 
 from knnvs import KnnBag, KnnVar, initialize_knn
+from sim_utils import resume_csv
 import random
 import logging
 import csv
@@ -51,13 +52,26 @@ if __name__ == '__main__':
     grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
     gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
 
-    with open('lar3.csv', 'w', newline='') as file:
-        logging.info("DESC,N_SIMS,ACC_FS_A,PVA,ACC_FS_V,PVV,N,P,KA,KV,MSEA,MSEV")
+    OUTFILE = 'lar3.csv'
+    HEADER = ['DESC', 'N_SIMS', 'ACC_FS_A', 'PVA', 'ACC_FS_V', 'PVV', 'N', 'P', 'KA', 'KV', 'MSEA', 'MSEV']
+    mode, combos_done, i_done, n_done = resume_csv(OUTFILE, HEADER, n_sims)
+
+    with open(OUTFILE, mode, newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['DESC', 'N_SIMS', 'ACC_FS_A', 'PVA', 'ACC_FS_V', 'PVV', 'N', 'P', 'KA', 'KV', 'MSEA', 'MSEV'])
+        if n_done == 0:
+            logging.info(",".join(HEADER))
+            writer.writerow(HEADER)
+        else:
+            logging.info("Resuming {}: {} rows already done".format(OUTFILE, n_done))
+        combo_idx = 0
         for n, b in n_list:
             for p in p_list:
-                for i in range(n_sims):
+                if combo_idx < combos_done:
+                    combo_idx += 1
+                    continue
+                i_start = i_done if combo_idx == combos_done else 0
+                combo_idx += 1
+                for i in range(i_start, n_sims):
                     x, y = simulate(n, p)
                     knna, fa, ka, pva, knnv, fv, kv, pvv = initialize_knn(x, y, grida, gridv, quantile=(1-0.01))
                     knn = KnnVar(knna, knnv)

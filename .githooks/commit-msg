@@ -1,0 +1,17 @@
+#!/bin/sh
+# Reject any commit message that credits Claude/Anthropic as an author.
+#
+# This repo's owner does not want an AI assistant showing up as a GitHub
+# contributor. Assistants sometimes add a "Co-Authored-By: Claude ..." or
+# "Generated with Claude Code" trailer by default; this hook makes that
+# impossible to slip through unnoticed, regardless of what wrote the commit.
+
+msg_file="$1"
+
+if grep -iE '(co-authored-by:.*(claude|anthropic))|(generated with.*claude)' "$msg_file" > /dev/null; then
+    echo "commit-msg hook: rejected - message credits Claude/Anthropic as (co-)author." >&2
+    echo "Remove the 'Co-Authored-By: Claude ...' / 'Generated with Claude Code' line(s) and commit again." >&2
+    exit 1
+fi
+
+exit 0
