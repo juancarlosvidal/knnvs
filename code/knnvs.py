@@ -41,19 +41,13 @@ Exported names of interest
 """
 
 import faiss
-import math
 from typing import Tuple, Optional
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
-import uuid
-import pickle
 import multiprocessing as mp
 from joblib import Parallel, delayed
-import tempfile
-from scipy import stats
 import logging
-from scipy.stats import wilcoxon, kstest, ttest_rel
+from scipy.stats import ttest_rel
 from scipy.interpolate import interp1d
 from scipy.integrate import simpson
 from sklearn.model_selection import train_test_split
@@ -390,6 +384,16 @@ class KnnBag:
         self._index = faiss.IndexFlatL2(int(self._x.shape[1]))
         self._index.add(self._x)
 
+    @property
+    def n_train(self) -> int:
+        """Number of points stored in the FAISS index.
+
+        This is the hard ceiling on k: asking the index for more neighbours
+        than it holds makes FAISS pad the result with -1, which numpy would
+        silently read as the last element of ``_y``.
+        """
+        return int(self._x.shape[0])
+
     def predict(
         self, x: npt.NDArray[np.float64], k: int = DEFAULT_K
     ) -> npt.NDArray[np.float64]:
@@ -426,7 +430,7 @@ class KnnBag:
         # Prepare query matrix (must be float32 contiguous)
         xt = np.ascontiguousarray(x[:, self._selected_cols].astype(np.float32))
         distances, indices = self._index.search(xt, k=int(k))
-        yp = np.mean(np.array(self._y[indices]), axis=1)
+        yp = np.mean(self._y[indices], axis=1)
         return yp
 
     def predict_ecdf(
@@ -451,7 +455,8 @@ class KnnBag:
         k : int, default=10
             Number of nearest neighbors.
         quantile_value : float, default=0.1
-            Quantile value (currently not used in computation).
+            Accepted and validated for API symmetry with the other predict
+            methods, but not used: the eCDF is determined by the neighbours.
 
         Returns
         -------
@@ -480,9 +485,14 @@ class KnnBag:
         # y_neighbors: (n_samples, k)
         y_neighbors = self._y[indices]
         z = np.asarray(z)
-        # vectorized empirical CDF: fraction of neighbors <= z for each sample
-        # result shape -> (n_samples, len(z))
-        counts = np.sum(y_neighbors[:, :, None] <= z[None, None, :], axis=1)
+        # Empirical CDF: fraction of neighbours <= z, for each sample.
+        # Sorting each row and binary-searching z gives the same counts as
+        # comparing every (neighbour, z) pair, without materialising the
+        # (n_samples, k, len(z)) boolean array that comparison would need.
+        y_sorted = np.sort(y_neighbors, axis=1)
+        counts = np.empty((y_sorted.shape[0], z.shape[0]), dtype=np.intp)
+        for i in range(y_sorted.shape[0]):
+            counts[i] = np.searchsorted(y_sorted[i], z, side="right")
         result = counts.astype(float) / float(y_neighbors.shape[1])
         return result
 
@@ -557,10 +567,11 @@ def roc(
     ecdf_0 = ECDF(res_0)
     ecdf_1 = ECDF(res_1)
 
-    sample_edf = ecdf_0
-    slope_changes = sorted(set(res_0))
-    sample_edf_values_at_slope_changes = [sample_edf(item) for item in slope_changes]
-    inverted_edf_0 = interp1d(sample_edf_values_at_slope_changes, slope_changes)
+    # Invert the eCDF of res_0 by interpolating over its jump points. The
+    # eCDF is evaluated on all of them in one vectorised call rather than
+    # one Python-level call per distinct value.
+    slope_changes = np.unique(res_0)
+    inverted_edf_0 = interp1d(ecdf_0(slope_changes), slope_changes)
 
     p = np.linspace(P_VALUE_RANGE_MIN, P_VALUE_RANGE_MAX, num=INTEGRATION_POINTS)
     r = 1 - ecdf_1(inverted_edf_0(1 - p) * b - a)
@@ -569,119 +580,6 @@ def roc(
     return i1
 
 
-# def no_initialize_knn(
-#     x: npt.NDArray[np.float64],
-#     y: npt.NDArray[np.float64],
-#     grida: npt.NDArray[np.int32],
-#     gridv: npt.NDArray[np.int32],
-#     quantile: float = DEFAULT_QUANTILE_THRESHOLD,
-# ) -> Tuple[
-#     KnnBag, npt.NDArray[np.int32], int, None, KnnBag, npt.NDArray[np.int32], int, None
-# ]:
-#     """
-#     Initialize kNN models without feature selection.
-
-#     Creates two kNN models (for mean and variance) using all available
-#     features. This is faster than initialize_knn but may be less accurate
-#     if irrelevant features are present.
-
-#     Parameters
-#     ----------
-#     x : np.ndarray of shape (n_samples, n_features)
-#         Input feature matrix.
-#     y : np.ndarray of shape (n_samples,)
-#         Target values.
-#     grida : np.ndarray
-#         Grid of k values to test for the mean model.
-#     gridv : np.ndarray
-#         Grid of k values to test for the variance model.
-#     quantile : float, default=0.99
-#         Quantile threshold (not used in this function, kept for API consistency).
-
-#     Returns
-#     -------
-#     tuple
-#         - knna : KnnBag
-#             Trained kNN model for mean prediction
-#         - features_avg : np.ndarray
-#             Feature indices used (all features)
-#         - k_avg : int
-#             Optimal k for mean model
-#         - pvalues_avg : None
-#             No p-values (no feature selection performed)
-#         - knnv : KnnBag
-#             Trained kNN model for variance prediction
-#         - features_var : np.ndarray
-#             Feature indices used (all features)
-#         - k_var : int
-#             Optimal k for variance model
-#         - pvalues_var : None
-#             No p-values (no feature selection performed)
-
-#     Notes
-#     -----
-#     The data is split multiple times to create training/validation sets
-#     for model selection and evaluation.
-#     """
-#     # First split: separate into two halves
-#     x1, x2, y1, y2 = train_test_split(
-#         x, y, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Split first half for mean model training
-#     x11, x12, y11, y12 = train_test_split(
-#         x1, y1, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Split second half for variance model training
-#     x21, x22, y21, y22 = train_test_split(
-#         x2, y2, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Split for final variance model evaluation
-#     x31, x32, y31, y32 = train_test_split(
-#         x22, y22, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Use all features (no feature selection)
-#     features_avg = np.arange(x11.shape[1])
-#     pvalues_avg = None
-
-#     # Train mean model and select optimal k
-#     knna = KnnBag(
-#         x12, y12, selected_rows=np.arange(x12.shape[0]), selected_cols=features_avg
-#     )
-#     k_avg = select_best_k(knna, x12, y12, grid=grida)
-
-#     # Compute residuals for variance model
-#     residuals_21 = np.square(y21 - knna.predict(x21, k_avg))
-
-#     features_var = np.arange(x21.shape[1])
-#     pvalues_var = None
-
-#     residuals_31 = np.square(y31 - knna.predict(x31, k_avg))
-
-#     # Train variance model
-#     knnv = KnnBag(
-#         x31,
-#         residuals_31,
-#         selected_rows=np.arange(x31.shape[0]),
-#         selected_cols=features_var,
-#     )
-
-#     residuals_32 = np.square(y32 - knna.predict(x32, k_avg))
-#     k_var = select_best_k_v(knnv, x32, residuals_32, grid=gridv)
-
-#     return (
-#         knna,
-#         features_avg,
-#         k_avg,
-#         pvalues_avg,
-#         knnv,
-#         features_var,
-#         k_var,
-#         pvalues_var,
-#     )
 def no_initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
     # Same folds as initialize_knn; only the selection step is skipped
     rng = np.random.RandomState(RANDOM_STATE_DEFAULT)
@@ -702,130 +600,6 @@ def no_initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
             knnv, features_var, k_var, pvalues_var)
 
 
-
-# def initialize_knn(
-#     x: npt.NDArray[np.float64],
-#     y: npt.NDArray[np.float64],
-#     grida: npt.NDArray[np.int32],
-#     gridv: npt.NDArray[np.int32],
-#     quantile: float = DEFAULT_QUANTILE_THRESHOLD,
-# ) -> Tuple[
-#     KnnBag,
-#     npt.NDArray[np.int32],
-#     int,
-#     npt.NDArray[np.float64],
-#     KnnBag,
-#     npt.NDArray[np.int32],
-#     int,
-#     npt.NDArray[np.float64],
-# ]:
-#     """
-#     Initialize kNN models with automatic feature selection.
-
-#     Creates two kNN models (for mean and variance) with automatic feature
-#     selection based on statistical significance tests. More computationally
-#     expensive than no_initialize_knn but typically more accurate.
-
-#     Parameters
-#     ----------
-#     x : np.ndarray of shape (n_samples, n_features)
-#         Input feature matrix.
-#     y : np.ndarray of shape (n_samples,)
-#         Target values.
-#     grida : np.ndarray
-#         Grid of k values to test for the mean model.
-#     gridv : np.ndarray
-#         Grid of k values to test for the variance model.
-#     quantile : float, default=0.99
-#         Quantile threshold for feature selection (higher = more strict).
-
-#     Returns
-#     -------
-#     tuple
-#         - knna : KnnBag
-#             Trained kNN model for mean prediction
-#         - features_avg : np.ndarray
-#             Selected feature indices for mean model
-#         - k_avg : int
-#             Optimal k for mean model
-#         - pvalues_avg : np.ndarray
-#             P-values from feature selection for mean model
-#         - knnv : KnnBag
-#             Trained kNN model for variance prediction
-#         - features_var : np.ndarray
-#             Selected feature indices for variance model
-#         - k_var : int
-#             Optimal k for variance model
-#         - pvalues_var : np.ndarray
-#             P-values from feature selection for variance model
-
-#     Notes
-#     -----
-#     The function uses multiple train-test splits to avoid overfitting
-#     during feature selection and model tuning.
-#     """
-#     # First split: separate into two halves
-#     x1, x2, y1, y2 = train_test_split(
-#         x, y, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Split first half for mean model training
-#     x11, x12, y11, y12 = train_test_split(
-#         x1, y1, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Split second half for variance model training
-#     x21, x22, y21, y22 = train_test_split(
-#         x2, y2, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Split for final variance model evaluation
-#     x31, x32, y31, y32 = train_test_split(
-#         x22, y22, test_size=DEFAULT_TEST_SIZE, random_state=RANDOM_STATE_DEFAULT
-#     )
-
-#     # Perform feature selection for mean model
-#     features_avg, pvalues_avg = select_features(
-#         x11, y11, grida=grida, quantile=quantile
-#     )
-
-#     # Train mean model with selected features
-#     knna = KnnBag(
-#         x12, y12, selected_rows=np.arange(x12.shape[0]), selected_cols=features_avg
-#     )
-#     k_avg = select_best_k(knna, x12, y12, grid=grida)
-
-#     # Compute residuals for variance model
-#     residuals_21 = np.square(y21 - knna.predict(x21, k_avg))
-
-#     # Perform feature selection for variance model
-#     features_var, pvalues_var = select_features(
-#         x21, residuals_21, grida=gridv, quantile=quantile
-#     )
-
-#     residuals_31 = np.square(y31 - knna.predict(x31, k_avg))
-
-#     # Train variance model with selected features
-#     knnv = KnnBag(
-#         x31,
-#         residuals_31,
-#         selected_rows=np.arange(x31.shape[0]),
-#         selected_cols=features_var,
-#     )
-
-#     residuals_32 = np.square(y32 - knna.predict(x32, k_avg))
-#     k_var = select_best_k_v(knnv, x32, residuals_32, grid=gridv)
-
-#     return (
-#         knna,
-#         features_avg,
-#         k_avg,
-#         pvalues_avg,
-#         knnv,
-#         features_var,
-#         k_var,
-#         pvalues_var,
-#     )
 
 def initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
     # Four balanced folds D1..D4 (~n/4 each), one per task (Fig. 2)
@@ -859,53 +633,87 @@ def select_best_k(
     grid: npt.NDArray[np.int32],
 ) -> int:
     """
-    Select optimal k value based on mean squared error.
+    Select the smoothing parameter k by leave-one-out cross-validation.
 
-    Evaluates different values of k on validation data and returns the k
-    that minimizes the mean squared error.
+    For every candidate k in the grid, the k-NN prediction at each point of
+    (x, y) is formed from its k nearest neighbours *excluding itself*, and the
+    k minimising the resulting mean squared error is returned. This is the
+    LOOCV rule of Azadkia (2019) used for both the conditional mean and the
+    conditional variance models.
 
     Parameters
     ----------
     bag : KnnBag
-        Trained kNN model with obtain_neighbors method.
+        Model whose index was built on (x, y) — see Notes.
     x : np.ndarray of shape (n_samples, n_features)
-        Input features for validation.
+        Input features used to build `bag`.
     y : np.ndarray of shape (n_samples,)
-        Target values for validation.
+        Target values used to build `bag`.
     grid : np.ndarray
-        Array of k values to test.
+        Candidate k values to evaluate.
 
     Returns
     -------
     int
-        Optimal k value from the grid that minimizes MSE.
+        The k in the grid minimising the leave-one-out MSE.
+
+    Raises
+    ------
+    ValueError
+        If the grid contains values below 1, or if no candidate k is
+        feasible for the number of training points available.
 
     Notes
     -----
-    This function is computationally efficient as it retrieves neighbors
-    only once (for max(grid)) and then evaluates different k values by
-    using subsets of those neighbors.
+    Candidate k values larger than ``bag.n_train - 1`` are dropped with a
+    warning: the index simply does not hold that many neighbours, and asking
+    FAISS for them returns -1 padding that numpy would silently read as the
+    last element of y. Dropping them also keeps the estimator inside the
+    k/n -> 0 regime assumed by the consistency results.
+
+    This function assumes `bag` was built on the same (x, y) passed here,
+    since it drops the first neighbour as the self-hit. Calling it with data
+    the bag has not seen would discard a genuine nearest neighbour instead.
+
+    Neighbours are retrieved once for max(grid) and all candidate k are then
+    evaluated from cumulative means over that single retrieval.
     """
     grid = np.asarray(grid, dtype=np.intp)
+    if grid.size == 0:
+        raise ValueError("grid must contain at least one candidate k")
     if grid.min() < 1:
         raise ValueError("grid values must be >= 1 for select_best_k")
 
-    kmax = int(grid.max())
-    # neighbors_full includes the point itself as first column -> drop it
-    neighbors = bag.obtain_neighbors(x, kmax + 1)[:, 1:]  # shape (n_samples, kmax)
+    # A point cannot have more neighbours than the index holds, minus itself.
+    k_ceiling = bag.n_train - 1
+    feasible = grid[grid <= k_ceiling]
+    if feasible.size == 0:
+        raise ValueError(
+            f"no candidate k is feasible: the smallest grid value is "
+            f"{int(grid.min())} but only {k_ceiling} neighbours are available"
+        )
+    if feasible.size < grid.size:
+        logger.warning(
+            "Dropping k values %s: only %d training points are available "
+            "(k must be <= %d).",
+            grid[grid > k_ceiling].tolist(),
+            bag.n_train,
+            k_ceiling,
+        )
+    grid = feasible
 
-    # y_neighbors shape (n_samples, kmax)
+    kmax = int(grid.max())
+    # neighbours_full includes the point itself as first column -> drop it
+    neighbors = bag.obtain_neighbors(x, kmax + 1)[:, 1:]  # (n_samples, kmax)
+
     y_neighbors = y[neighbors]
-    # cumulative mean of first m neighbors (1..kmax)
+    # cumulative mean over the first m neighbours, m = 1..kmax
     cumsum = np.cumsum(y_neighbors, axis=1)
     counts = np.arange(1, kmax + 1)
     cummean = cumsum / counts[np.newaxis, :]
 
-    # For each candidate k, pick cummean[:, k-1] and compute MSE
-    # vectorized evaluation for all candidate k
-    grid = np.asarray(grid, dtype=np.intp)
-    grid_idx = grid - 1  # zero-based indices into cummean
-    pred_matrix = cummean[:, grid_idx]  # shape (n_samples, len(grid))
+    # evaluate every candidate k at once
+    pred_matrix = cummean[:, grid - 1]  # (n_samples, len(grid))
     errors = np.mean((y[:, None] - pred_matrix) ** 2, axis=0)
     return int(grid[np.argmin(errors)])
 
@@ -917,54 +725,18 @@ def select_best_k_v(
     grid: npt.NDArray[np.int32],
 ) -> int:
     """
-    Select optimal k value for variance estimation.
+    Select k for the conditional variance model.
 
-    Similar to select_best_k but optimized for variance/residual prediction.
-    Includes all neighbors (including the point itself) in the search.
+    The paper applies the same LOOCV rule separately to the mean and the
+    variance components, so this is `select_best_k` applied to the variance
+    bag and its squared-residual targets. It is kept as a separate name
+    because the two selections are conceptually distinct steps (folds D2 and
+    D4 of Figure 2), not because the criterion differs.
 
-    Parameters
-    ----------
-    bag : KnnBag
-        Trained kNN model with obtain_neighbors method.
-    x : np.ndarray of shape (n_samples, n_features)
-        Input features for validation.
-    y : np.ndarray of shape (n_samples,)
-        Target values (typically residuals) for validation.
-    grid : np.ndarray
-        Array of k values to test.
-
-    Returns
-    -------
-    int
-        Optimal k value from the grid that minimizes MSE.
-
-    Notes
-    -----
-    Unlike select_best_k, this function includes the point itself in
-    neighbor consideration (starts from index 1 instead of 0).
+    See `select_best_k` for parameters, return value and caveats.
     """
-    grid = np.asarray(grid, dtype=np.intp)
-    if grid.min() < 1:
-        raise ValueError(
-            "grid values must be >= 1 for select_best_k_v (at least 1 neighbor excluding self)"
-        )
+    return select_best_k(bag, x, y, grid)
 
-    kmax = int(grid.max())
-    # Request kmax+1 neighbors so we can exclude the self-hit at col 0
-    neighbors_full = bag.obtain_neighbors(x, kmax + 1)  # shape (n_samples, kmax+1)
-    # Exclude self (first column) -> shape (n_samples, kmax)
-    neighbors_excl_self = neighbors_full[:, 1 : (kmax + 1)]
-
-    y_neighbors = y[neighbors_excl_self]  # shape (n_samples, kmax)
-    cumsum = np.cumsum(y_neighbors, axis=1)
-    counts = np.arange(1, kmax + 1)
-    cummean = cumsum / counts[np.newaxis, :]
-
-    grid = np.asarray(grid, dtype=np.intp)
-    grid_idx = grid - 1
-    pred_matrix = cummean[:, grid_idx]
-    errors = np.mean((y[:, None] - pred_matrix) ** 2, axis=0)
-    return int(grid[np.argmin(errors)])
 
 
 def select_features(
@@ -981,7 +753,7 @@ def select_features(
     - Splits the provided (x, y) into training/validation subsets.
     - Trains a reference KnnBag on the training subset using all features.
     - For each feature j, trains a KnnBag with feature j removed.
-    - On the validation subset computes absolute prediction errors with and
+    - On the validation subset computes squared prediction errors with and
       without each feature and runs a paired t-test (one-sided: errors with
       all features < errors with feature removed).
     - Applies a Bonferroni correction for multiple comparisons.
