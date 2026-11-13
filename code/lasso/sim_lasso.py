@@ -393,8 +393,8 @@ if __name__ == '__main__':
     _str_sim = 'lasso_scenario_{}_{}'.format(_scenario, _alpha)  # Identifier string
 
     # Grid search values for optimal k selection in mean and variance estimation
-    _grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])  # k values for mean
-    _gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])  # k values for variance
+    _grida = None  # None -> k_grid() lo deriva como fracciones del fold correspondiente
+    _gridv = None
 
     # Get ground truth variable sets for this scenario
     ga, gv = sim_gt(_scenario)  # ga: mean vars, gv: variance vars

@@ -137,8 +137,8 @@ if __name__ == '__main__':
     _n_sims = 1            # One realization for the figure
     _n_list, _p_list = sim_config(_scenario)
 
-    _grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
-    _gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
+    _grida = None  # None -> k_grid() lo deriva como fracciones del fold correspondiente
+    _gridv = None
 
     z = np.linspace(-2, 100, 1000)
 

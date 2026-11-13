@@ -49,8 +49,8 @@ if __name__ == '__main__':
     fa_gt = np.array([1, 2])   # Ground truth of important variables in mean
     fv_gt = np.array([0])  # Ground truth of important variables in variance
 
-    grida = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
-    gridv = np.array([5, 10, 20, 50, 100, 200, 500, 1000, 2000])
+    grida = None  # None -> k_grid() lo deriva como fracciones del fold correspondiente
+    gridv = None
 
     OUTFILE = 'sim3.csv'
     HEADER = ['DESC', 'N_SIMS', 'ACC_FS_A', 'PVA', 'ACC_FS_V', 'PVV', 'N', 'P', 'KA', 'KV', 'MSEA', 'MSEV']

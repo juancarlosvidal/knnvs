@@ -65,6 +65,40 @@ INTEGRATION_POINTS = 100
 P_VALUE_RANGE_MIN = 0.001
 P_VALUE_RANGE_MAX = 0.999
 DEFAULT_K = 10
+
+# Fold sizes as fractions of n, in the order D1..D4 of Figure 2: feature
+# selection for the mean, mean fit + k, feature selection for the variance,
+# variance fit + k. They are deliberately unequal. The two selection tasks
+# are not equally hard: the mean is selected against Gaussian noise, while
+# the variance is selected against the squared-residual pseudo-response
+# sigma^2 * chi2_1, whose noise-to-signal ratio is 1.77 and whose kurtosis
+# is 15. Measured on the simulation scenarios, mean selection stays at
+# perfect accuracy on as little as 6% of n, while variance selection fails
+# to reject anything on 25% of it. Moving budget from D1 to D3 leaves the
+# fitting folds D2 and D4 untouched, so the estimators are unaffected.
+# Theorem 1 only asks that n_j / n -> pi_j in (0, 1), which unequal folds
+# satisfy.
+FOLD_FRACTIONS = (0.15, 0.25, 0.35, 0.25)
+
+# Candidate k values, as fractions of the fold the model is built on. A
+# fixed grid cannot serve every sample size: 2000 neighbours is 160% of the
+# fold at n=5000 and 8% of it at n=100000, so the same grid was unusable at
+# one end and saturated at the other. Expressed as fractions, the range
+# spans the k values the method actually selects (0.002 to 0.4 of the fold
+# across the published runs).
+K_GRID_FRACTIONS = (0.002, 0.004, 0.008, 0.016, 0.03, 0.06, 0.12, 0.25, 0.5)
+MIN_K = 5
+
+
+def k_grid(n_train: int) -> npt.NDArray[np.intp]:
+    """Candidate k values for a model built on n_train points.
+
+    Returns K_GRID_FRACTIONS scaled by n_train, floored at MIN_K, with
+    duplicates removed and values the index cannot honour dropped.
+    """
+    g = np.round(np.asarray(K_GRID_FRACTIONS, dtype=float) * int(n_train))
+    g = np.unique(np.maximum(g, MIN_K).astype(np.intp))
+    return g[g <= int(n_train) - 1]
 DEFAULT_QUANTILE_VALUE = 0.1
 DEFAULT_QUANTILE_THRESHOLD = 0.99
 
@@ -580,10 +614,12 @@ def roc(
     return i1
 
 
-def no_initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
+def no_initialize_knn(x, y, grida=None, gridv=None, quantile=DEFAULT_QUANTILE_THRESHOLD):
     # Same folds as initialize_knn; only the selection step is skipped
     rng = np.random.RandomState(RANDOM_STATE_DEFAULT)
-    i1, i2, i3, i4 = np.array_split(rng.permutation(x.shape[0]), 4)
+    n = x.shape[0]
+    cuts = np.cumsum([int(n * f) for f in FOLD_FRACTIONS])[:-1]
+    i1, i2, i3, i4 = np.split(rng.permutation(n), cuts)
     x2, y2 = x[i2], y[i2]
     x4, y4 = x[i4], y[i4]
 
@@ -601,10 +637,12 @@ def no_initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
 
 
 
-def initialize_knn(x, y, grida, gridv, quantile=DEFAULT_QUANTILE_THRESHOLD):
+def initialize_knn(x, y, grida=None, gridv=None, quantile=DEFAULT_QUANTILE_THRESHOLD):
     # Four balanced folds D1..D4 (~n/4 each), one per task (Fig. 2)
     rng = np.random.RandomState(RANDOM_STATE_DEFAULT)
-    i1, i2, i3, i4 = np.array_split(rng.permutation(x.shape[0]), 4)
+    n = x.shape[0]
+    cuts = np.cumsum([int(n * f) for f in FOLD_FRACTIONS])[:-1]
+    i1, i2, i3, i4 = np.split(rng.permutation(n), cuts)
     x1, y1 = x[i1], y[i1]   # D1: feature selection, mean
     x2, y2 = x[i2], y[i2]   # D2: fit mean + select k_avg
     x3, y3 = x[i3], y[i3]   # D3: feature selection, variance
@@ -630,7 +668,7 @@ def select_best_k(
     bag: KnnBag,
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
-    grid: npt.NDArray[np.int32],
+    grid: Optional[npt.NDArray[np.int32]] = None,
 ) -> int:
     """
     Select the smoothing parameter k by leave-one-out cross-validation.
@@ -680,6 +718,8 @@ def select_best_k(
     Neighbours are retrieved once for max(grid) and all candidate k are then
     evaluated from cumulative means over that single retrieval.
     """
+    if grid is None:
+        grid = k_grid(bag.n_train)
     grid = np.asarray(grid, dtype=np.intp)
     if grid.size == 0:
         raise ValueError("grid must contain at least one candidate k")
@@ -760,7 +800,7 @@ def select_best_k_v(
 def select_features(
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
-    grida: npt.NDArray[np.int32],
+    grida: Optional[npt.NDArray[np.int32]] = None,
     quantile: float = DEFAULT_QUANTILE_THRESHOLD,
 ) -> Tuple[npt.NDArray[np.int32], npt.NDArray[np.float64]]:
     """
@@ -809,8 +849,6 @@ def select_features(
         raise TypeError(f"x must be a numpy array, got {type(x).__name__}")
     if not isinstance(y, np.ndarray):
         raise TypeError(f"y must be a numpy array, got {type(y).__name__}")
-    if not isinstance(grida, np.ndarray):
-        raise TypeError(f"grida must be a numpy array, got {type(grida).__name__}")
     if not 0 < quantile <= 1:
         raise ValueError(f"quantile must be in (0, 1], got {quantile}")
 
