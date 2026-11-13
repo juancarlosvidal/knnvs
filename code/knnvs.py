@@ -671,9 +671,11 @@ def select_best_k(
     last element of y. Dropping them also keeps the estimator inside the
     k/n -> 0 regime assumed by the consistency results.
 
-    This function assumes `bag` was built on the same (x, y) passed here,
-    since it drops the first neighbour as the self-hit. Calling it with data
-    the bag has not seen would discard a genuine nearest neighbour instead.
+    This function assumes `bag` was built on the same (x, y) passed here, in
+    the same row order: row i of x is taken to be point i of the index, and
+    that is how the point is recognised and excluded from its own
+    prediction. Passing data the bag has not seen would make row numbers
+    match unrelated neighbours and silently drop them.
 
     Neighbours are retrieved once for max(grid) and all candidate k are then
     evaluated from cumulative means over that single retrieval.
@@ -703,8 +705,24 @@ def select_best_k(
     grid = feasible
 
     kmax = int(grid.max())
-    # neighbours_full includes the point itself as first column -> drop it
-    neighbors = bag.obtain_neighbors(x, kmax + 1)[:, 1:]  # (n_samples, kmax)
+    # One extra neighbour, so that kmax genuine ones remain once the query
+    # point itself is removed.
+    neighbors = bag.obtain_neighbors(x, kmax + 1)
+
+    # The query point is its own nearest neighbour at distance 0, but FAISS
+    # does not reliably return it first. It computes squared distances as
+    # |a|^2 + |b|^2 - 2<a,b> in float32, and in low dimension the distance to
+    # a genuine neighbour can fall below that expression's rounding error, so
+    # several neighbours come back at exactly 0.0 and ties are ordered by
+    # index. Dropping column 0 would then keep the point inside its own
+    # prediction -- which makes small k look artificially good -- while
+    # discarding a real neighbour. So find the point wherever it landed.
+    row = np.arange(neighbors.shape[0])
+    is_self = neighbors == row[:, None]
+    # Column to drop: the query point where present, the last one otherwise.
+    drop = np.where(is_self.any(axis=1), is_self.argmax(axis=1), kmax)
+    keep = np.arange(kmax)[None, :] + (np.arange(kmax)[None, :] >= drop[:, None])
+    neighbors = np.take_along_axis(neighbors, keep, axis=1)  # (n_samples, kmax)
 
     y_neighbors = y[neighbors]
     # cumulative mean over the first m neighbours, m = 1..kmax
